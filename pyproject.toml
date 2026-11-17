@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deconv-attributor"
+version = "0.1.0"
+description = "Minimal proof-of-concept: separate bulk RNA-seq changes into cell-type proportion shifts vs. intrinsic gene expression changes."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+dependencies = [
+    "numpy>=1.23",
+    "pandas>=1.5",
+    "scipy>=1.9",
+    "scikit-learn>=1.2",
+]
+
+[project.scripts]
+deconv-attributor = "deconv_attributor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
