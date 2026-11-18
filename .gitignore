@@ -8,6 +8,6 @@ build/
 .venv/
 venv/
 .DS_Store
-data/*
-!data/.gitkeep
+data/
 scripts/
+instructions.md

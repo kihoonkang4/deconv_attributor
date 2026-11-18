@@ -1,5 +1,3 @@
-"""Step 1: Build baseline cell-type reference matrix S_T (genes x cell_types) and marker weights w."""
-
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -64,6 +62,7 @@ def build_reference(
         w = w / np.median(w[w > 0])
 
     S_T = pd.DataFrame(S_T_arr, index=gene_index, columns=unique_types)
+    S_T.attrs["p_ref"] = pd.Series(counts_per_type / float(n_cells), index=unique_types)
     w_series = pd.Series(w, index=gene_index, name="w_prior")
     return S_T, w_series
 
