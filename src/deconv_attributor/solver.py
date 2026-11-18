@@ -1,10 +1,9 @@
-"""Steps 2 & 3: Robustly estimate cell-type shift Δp, attribute Δy, and compute simple p-values."""
+"""Steps 2 & 3: Robustly estimate cell-type shift Δp and attribute Δy."""
 
 from dataclasses import dataclass
 import warnings
 import numpy as np
 import pandas as pd
-from scipy import stats
 from scipy.optimize import nnls
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import HuberRegressor
@@ -12,11 +11,10 @@ from sklearn.linear_model import HuberRegressor
 
 @dataclass
 class AttributionOutput:
-    """Minimal proof-of-concept output with cell-type and gene-level p-values."""
+    """Minimal proof-of-concept output separating cell-type shift from intrinsic expression change."""
 
     delta_p: pd.Series             # (K,) Estimated cell-type proportion shift
-    cell_type_table: pd.DataFrame  # (K, 3) delta_p, std_err, p_value per cell type
-    gene_table: pd.DataFrame       # (G, 7) Per-gene decomposition, % attribution, z_expr, pval_expr
+    gene_table: pd.DataFrame       # (G, 5) Per-gene decomposition and % attribution
     global_pct_cell_type: float    # Global % of change explained by cell-type shift
     global_pct_expression: float   # Global % of change explained by intrinsic gene expression
 
@@ -29,13 +27,11 @@ def attribute_changes(
     calibrate_platform: bool = True,
 ) -> AttributionOutput:
     """
-    Minimal 3-step attribution + textbook statistics between bulk sample y1 and y2:
+    Minimal 3-step attribution between bulk sample y1 and y2:
       1. Given reference S_T (genes x cell_types) and marker specificity weights w,
          optionally calibrate gene capture efficiency from baseline bulk y1.
-      2. Fit Δy = y2 - y1 ≈ S_T @ Δp using HuberRegressor weighted by w, and compute
-         standard errors & p-values for Δp from the inlier marker genes.
-      3. Subtract to split every gene's change into Δy_cell_type and Δy_expr, and compute
-         robust MAD Z-scores & p-values for each gene's intrinsic expression shift.
+      2. Fit Δy = y2 - y1 ≈ S_T @ Δp using HuberRegressor weighted by w.
+      3. Subtract to split every gene's change into Δy_cell_type and Δy_expr.
     """
     shared_genes = S_T.index.intersection(y1.index).intersection(y2.index)
     if shared_genes.empty:
@@ -98,35 +94,6 @@ def attribute_changes(
     pct_cell_type = 100.0 * abs_ct / denom
     pct_expr = 100.0 * abs_ex / denom
 
-    # Simple Statistics A: Cell-type shift standard errors & t-test p-values from Huber inliers
-    inliers = ~huber.outliers_
-    if inliers.sum() <= S_mat.shape[1]:
-        inliers = np.ones(len(delta_y), dtype=bool)
-    sqrt_w = np.sqrt(np.clip(w_vec[inliers], 0.0, None))
-    X_in = X_scaled[inliers] * sqrt_w[:, np.newaxis]
-    r_in = (dy_expr[inliers] / row_scale[inliers]) * sqrt_w
-    df_resid = max(int(inliers.sum()) - S_mat.shape[1], 1)
-    sigma2 = float(np.sum(r_in ** 2) / df_resid)
-    cov_dp = sigma2 * np.linalg.pinv(X_in.T @ X_in)
-    se_dp = np.sqrt(np.maximum(np.diag(cov_dp), 1e-16))
-    pval_dp = 2.0 * stats.t.sf(np.abs(delta_p_arr / se_dp), df=df_resid)
-
-    cell_type_table = pd.DataFrame(
-        {
-            "delta_p": delta_p_arr,
-            "std_err": se_dp,
-            "p_value": pval_dp,
-        },
-        index=S_T.columns,
-    )
-
-    # Simple Statistics B: Gene-level Z-scores & p-values from robust MAD of scaled residuals
-    r_scaled = dy_expr / row_scale
-    abs_dev = np.abs(r_scaled - np.median(r_scaled))
-    tau = max(1.4826 * float(np.median(abs_dev)), 1e-4)
-    z_expr = r_scaled / tau
-    pval_expr = 2.0 * stats.norm.sf(np.abs(z_expr))
-
     total_l1 = float((abs_ct + abs_ex).sum())
     if total_l1 > 0:
         global_pct_ct = float(100.0 * abs_ct.sum() / total_l1)
@@ -141,15 +108,12 @@ def attribute_changes(
             "delta_y_expr": dy_expr,
             "pct_cell_type": pct_cell_type,
             "pct_expr": pct_expr,
-            "z_expr": z_expr,
-            "pval_expr": pval_expr,
         },
         index=shared_genes,
     )
 
     return AttributionOutput(
         delta_p=delta_p,
-        cell_type_table=cell_type_table,
         gene_table=gene_table,
         global_pct_cell_type=global_pct_ct,
         global_pct_expression=global_pct_ex,

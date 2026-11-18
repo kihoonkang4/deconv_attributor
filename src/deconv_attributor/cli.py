@@ -121,7 +121,7 @@ def _cmd_solve(args: argparse.Namespace) -> None:
 
     Path(args.out_summary).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out_genes).parent.mkdir(parents=True, exist_ok=True)
-    res.cell_type_table.to_csv(args.out_summary)
+    res.delta_p.to_frame(name="delta_p").to_csv(args.out_summary)
     res.gene_table.to_csv(args.out_genes)
 
     print(f"Attribution ({args.sample_a} -> {args.sample_b}):")
@@ -184,30 +184,25 @@ def _cmd_benchmark(args: argparse.Namespace) -> None:
     print(f"  Global Intrinsic Expression Attribution           : {res_real.global_pct_expression:.1f}%\n")
 
     print("Top Cell-Type Proportion Shifts (PBS -> d10):")
-    print("-" * 78)
-    print(f"{'Cell Type':<20} | {'True Δp':>10} | {'Est Δp':>10} | {'StdErr':>10} | {'p-value':>12}")
-    print("-" * 78)
-    for ct in res_real.cell_type_table["delta_p"].abs().nlargest(6).index:
-        ct_row = res_real.cell_type_table.loc[ct]
-        print(
-            f"{ct:<20} | {true_delta_p[ct]:>+10.4f} | {ct_row['delta_p']:>+10.4f} | "
-            f"{ct_row['std_err']:>10.4f} | {ct_row['p_value']:>12.2e}"
-        )
+    print("-" * 52)
+    print(f"{'Cell Type':<20} | {'True Δp':>12} | {'Est Δp':>12}")
+    print("-" * 52)
+    for ct in res_real.delta_p.abs().nlargest(6).index:
+        print(f"{ct:<20} | {true_delta_p[ct]:>+12.4f} | {res_real.delta_p[ct]:>+12.4f}")
     print()
 
     print("Key Fibrosis & Lung Marker Genes (PBS -> d10):")
-    print("-" * 92)
+    print("-" * 78)
     print(
-        f"{'Gene':<10} | {'Δy_total':>9} | {'Δy_cell_type':>13} | {'Δy_expr':>9} | {'%CellType':>9} | {'%Expr':>7} | {'z_expr':>8} | {'pval_expr':>10}"
+        f"{'Gene':<10} | {'Δy_total':>10} | {'Δy_cell_type':>13} | {'Δy_expr':>11} | {'%CellType':>10} | {'%Expr':>8}"
     )
-    print("-" * 92)
+    print("-" * 78)
     for g in ["Spp1", "Arg1", "Ccl2", "Fn1", "Col1a1", "Col3a1", "C1qa", "Sftpc", "Scgb1a1"]:
         if g in res_real.gene_table.index:
             row = res_real.gene_table.loc[g]
             print(
-                f"{g:<10} | {row['delta_y_total']:>+9.2f} | {row['delta_y_cell_type']:>+13.2f} | "
-                f"{row['delta_y_expr']:>+9.2f} | {row['pct_cell_type']:>8.1f}% | {row['pct_expr']:>6.1f}% | "
-                f"{row['z_expr']:>+8.2f} | {row['pval_expr']:>10.2e}"
+                f"{g:<10} | {row['delta_y_total']:>+10.2f} | {row['delta_y_cell_type']:>+13.2f} | "
+                f"{row['delta_y_expr']:>+11.2f} | {row['pct_cell_type']:>9.1f}% | {row['pct_expr']:>7.1f}%"
             )
 
 

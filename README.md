@@ -78,7 +78,7 @@ deconv-attributor make-bulk \
 ---
 
 ### 3. `deconv-attributor solve`
-**Purpose:** Steps 2 & 3 — Estimates cell-type proportion shifts ($\Delta p$) between two bulk samples and attributes each gene's bulk expression change into cell-type shift (`delta_y_cell_type`, `pct_cell_type`) vs. intrinsic expression change (`delta_y_expr`, `pct_expr`), along with analytical $p$-values.
+**Purpose:** Steps 2 & 3 — Estimates cell-type proportion shifts ($\Delta p$) between two bulk samples and attributes each gene's bulk expression change into cell-type shift (`delta_y_cell_type`, `pct_cell_type`) vs. intrinsic expression change (`delta_y_expr`, `pct_expr`).
 
 ```bash
 deconv-attributor solve \
@@ -101,8 +101,8 @@ deconv-attributor solve \
 | `--sample-filter` | Optional | `None` | Sample name filter in `--sc-meta` when using `--sc-counts` + `--sc-meta`. |
 | `--cell-type-col` | Optional | `cell_type` | Cell-type column name in `--sc-meta` when using `--sc-counts` + `--sc-meta`. |
 | `--no-normalize` | Optional | `False` | If set, skips normalizing each bulk sample column to sum to $10{,}000$ (CP10K). |
-| `--out-summary` | Optional | `cell_type_shifts.csv` | Output CSV path for the cell-type shift table (`delta_p`, `std_err`, `p_value`). |
-| `--out-genes` | Optional | `gene_attribution.csv` | Output CSV path for the per-gene attribution table (`delta_y_total`, `delta_y_cell_type`, `delta_y_expr`, `pct_cell_type`, `pct_expr`, `z_expr`, `pval_expr`). |
+| `--out-summary` | Optional | `cell_type_shifts.csv` | Output CSV path for the cell-type shift table (`delta_p`). |
+| `--out-genes` | Optional | `gene_attribution.csv` | Output CSV path for the per-gene attribution table (`delta_y_total`, `delta_y_cell_type`, `delta_y_expr`, `pct_cell_type`, `pct_expr`). |
 
 ---
 

@@ -70,10 +70,6 @@ class TestMinimalPipeline(unittest.TestCase):
         np.testing.assert_allclose(res.delta_p.to_numpy(), (p2 - p1).to_numpy(), atol=1e-2)
         self.assertGreater(float(res.gene_table.loc["Gene_00", "pct_expr"]), 90.0)
         self.assertGreater(float(res.gene_table.loc["Gene_05", "pct_cell_type"]), 95.0)
-        # Verify p-values for both cell types and genes
-        self.assertTrue(np.all(res.cell_type_table["p_value"] < 1e-5))
-        self.assertLess(float(res.gene_table.loc["Gene_00", "pval_expr"]), 1e-10)
-        self.assertGreater(float(res.gene_table.loc["Gene_05", "pval_expr"]), 0.05)
 
 
 if __name__ == "__main__":
