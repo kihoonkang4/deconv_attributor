@@ -7,7 +7,7 @@ name = "deconv-attributor"
 version = "0.1.0"
 description = "Minimal proof-of-concept: separate bulk RNA-seq changes into cell-type proportion shifts vs. intrinsic gene expression changes."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
 dependencies = [
     "numpy>=1.23",

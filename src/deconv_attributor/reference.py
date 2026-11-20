@@ -1,7 +1,23 @@
+from dataclasses import dataclass
 from pathlib import Path
+import warnings
 import numpy as np
 import pandas as pd
 from scipy import sparse
+
+
+@dataclass
+class Reference:
+    """Baseline single-cell reference.
+
+    S_T:   (G x K) cell-type mean expression in linear CP10K.
+    w:     (G,) marker specificity weights.
+    p_ref: (K,) cell-type fractions in the reference cells, or None if unknown.
+    """
+
+    S_T: pd.DataFrame
+    w: pd.Series
+    p_ref: pd.Series | None = None
 
 
 def build_reference(
@@ -10,8 +26,8 @@ def build_reference(
     genes: pd.Index | list[str] | None = None,
     normalize: bool = True,
     scale_factor: float = 1e4,
-) -> tuple[pd.DataFrame, pd.Series]:
-    """Compute baseline cluster mean expression S_T (G x K) and marker specificity weights w (G,).
+) -> Reference:
+    """Compute baseline cluster mean expression S_T (G x K), marker weights w (G,) and cell-type fractions p_ref (K,).
 
     Formula:
         w_g = Var_between(S_{k,g}) / (Var_within(X_{c,g}) + 1e-4)
@@ -61,24 +77,42 @@ def build_reference(
     if np.any(w > 0):
         w = w / np.median(w[w > 0])
 
-    S_T = pd.DataFrame(S_T_arr, index=gene_index, columns=unique_types)
-    S_T.attrs["p_ref"] = pd.Series(counts_per_type / float(n_cells), index=unique_types)
-    w_series = pd.Series(w, index=gene_index, name="w_prior")
-    return S_T, w_series
+    return Reference(
+        S_T=pd.DataFrame(S_T_arr, index=gene_index, columns=unique_types),
+        w=pd.Series(w, index=gene_index, name="w_prior"),
+        p_ref=pd.Series(counts_per_type / float(n_cells), index=unique_types, name="p_ref"),
+    )
 
 
-def save_reference(S_T: pd.DataFrame, w: pd.Series, out_dir: str | Path) -> Path:
-    """Save reference matrix S_T and marker weights w to disk."""
+S_T_FILE = "S_T_matrix_GxK.csv.gz"
+WEIGHTS_FILE = "marker_weights.csv"
+P_REF_FILE = "cell_type_fractions.csv"
+
+
+def save_reference(ref: Reference, out_dir: str | Path) -> Path:
+    """Save reference matrix S_T, marker weights w and cell-type fractions p_ref to disk."""
     dest = Path(out_dir)
     dest.mkdir(parents=True, exist_ok=True)
-    S_T.to_csv(dest / "S_T_matrix_GxK.csv.gz", compression="gzip")
-    w.to_frame(name="w_prior").to_csv(dest / "marker_weights.csv")
+    ref.S_T.to_csv(dest / S_T_FILE, compression="gzip")
+    ref.w.to_frame(name="w_prior").to_csv(dest / WEIGHTS_FILE)
+    if ref.p_ref is not None:
+        ref.p_ref.to_frame(name="p_ref").to_csv(dest / P_REF_FILE)
     return dest
 
 
-def load_reference(ref_dir: str | Path) -> tuple[pd.DataFrame, pd.Series]:
-    """Load pre-computed reference matrix S_T and marker weights w from disk."""
+def load_reference(ref_dir: str | Path) -> Reference:
+    """Load a reference written by `save_reference`."""
     src = Path(ref_dir)
-    S_T = pd.read_csv(src / "S_T_matrix_GxK.csv.gz", index_col=0)
-    w = pd.read_csv(src / "marker_weights.csv", index_col=0)["w_prior"]
-    return S_T, w
+    S_T = pd.read_csv(src / S_T_FILE, index_col=0)
+    w = pd.read_csv(src / WEIGHTS_FILE, index_col=0)["w_prior"]
+    p_ref = None
+    if (src / P_REF_FILE).exists():
+        p_ref = pd.read_csv(src / P_REF_FILE, index_col=0)["p_ref"].reindex(S_T.columns)
+    else:
+        warnings.warn(
+            f"{src / P_REF_FILE} not found (reference built by an older version); "
+            "platform calibration will fall back to proportions estimated from the baseline bulk sample. "
+            "Re-run `build-ref` to restore identical behaviour to the in-memory pipeline.",
+            stacklevel=2,
+        )
+    return Reference(S_T=S_T, w=w, p_ref=p_ref)

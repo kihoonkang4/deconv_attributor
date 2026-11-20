@@ -8,6 +8,10 @@ from scipy.optimize import nnls
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import HuberRegressor
 
+from .reference import Reference
+
+PLATFORM_R_THRESHOLD = 0.90
+
 
 @dataclass
 class AttributionOutput:
@@ -17,11 +21,19 @@ class AttributionOutput:
     gene_table: pd.DataFrame       # (G, 5) Per-gene decomposition and % attribution
     global_pct_cell_type: float    # Global % of change explained by cell-type shift
     global_pct_expression: float   # Global % of change explained by intrinsic gene expression
+    platform_r: float              # Pearson r of log1p(y1) vs. log1p(S_T @ p1) before calibration
+    platform_calibrated: bool      # Whether per-gene capture calibration was applied
+
+
+def to_cp10k(y: pd.Series, scale_factor: float = 1e4) -> pd.Series:
+    """Scale a linear expression vector to sum to `scale_factor`."""
+    y = y.astype(float)
+    total = float(y.sum())
+    return y * (scale_factor / total) if total > 0 else y
 
 
 def attribute_changes(
-    S_T: pd.DataFrame,
-    w: pd.Series,
+    ref: Reference,
     y1: pd.Series,
     y2: pd.Series,
     calibrate_platform: bool = True,
@@ -29,10 +41,13 @@ def attribute_changes(
     """
     Minimal 3-step attribution between bulk sample y1 and y2:
       1. Given reference S_T (genes x cell_types) and marker specificity weights w,
-         optionally calibrate gene capture efficiency from baseline bulk y1.
+         calibrate per-gene capture efficiency from baseline bulk y1 if it fits S_T poorly
+         (Pearson r < PLATFORM_R_THRESHOLD on log1p scale). Baseline proportions for the
+         calibration come from ref.p_ref, or from an NNLS fit of y1 when p_ref is None.
       2. Fit Δy = y2 - y1 ≈ S_T @ Δp using HuberRegressor weighted by w.
       3. Subtract to split every gene's change into Δy_cell_type and Δy_expr.
     """
+    S_T, w = ref.S_T, ref.w
     shared_genes = S_T.index.intersection(y1.index).intersection(y2.index)
     if shared_genes.empty:
         raise ValueError("No overlapping genes between reference S_T and bulk samples.")
@@ -48,6 +63,8 @@ def attribute_changes(
     row_scale = np.linalg.norm(S_mat, axis=1) + 1.0
 
     # Automatic baseline platform calibration when cross-platform capture bias is detected
+    r_platform = float("nan")
+    calibrated = False
     if calibrate_platform:
         p1_weights = np.sqrt(np.clip(w_vec, 0.0, None)) / row_scale
         p1_est, _ = nnls(S_mat * p1_weights[:, np.newaxis], np.clip(y1_vec, 0.0, None) * p1_weights)
@@ -59,12 +76,9 @@ def attribute_changes(
             if np.std(y1_pos) > 0
             else 1.0
         )
-        if r_platform < 0.90:
-            p_base = (
-                S_T.attrs["p_ref"].reindex(S_T.columns).to_numpy(dtype=float)
-                if "p_ref" in S_T.attrs
-                else p1_norm
-            )
+        if r_platform < PLATFORM_R_THRESHOLD:
+            calibrated = True
+            p_base = ref.p_ref.reindex(S_T.columns).fillna(0.0).to_numpy(dtype=float) if ref.p_ref is not None else p1_norm
             y1_expected_sc = S_mat @ p_base
             gamma = (y1_pos + 0.1) / (y1_expected_sc + 0.1)
             S_mat = S_mat * gamma[:, np.newaxis]
@@ -117,4 +131,6 @@ def attribute_changes(
         gene_table=gene_table,
         global_pct_cell_type=global_pct_ct,
         global_pct_expression=global_pct_ex,
+        platform_r=r_platform,
+        platform_calibrated=calibrated,
     )

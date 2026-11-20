@@ -32,7 +32,7 @@ The `deconv-attributor` CLI provides four subcommands: `build-ref`, `make-bulk`,
 ---
 
 ### 1. `deconv-attributor build-ref`
-**Purpose:** Step 1 — Builds the baseline cell-type reference matrix (`S_T_matrix_GxK.csv.gz`) and per-gene marker specificity weights (`marker_weights.csv`) from baseline single-cell RNA-seq data.
+**Purpose:** Step 1 — Builds the baseline cell-type reference matrix (`S_T_matrix_GxK.csv.gz`), per-gene marker specificity weights (`marker_weights.csv`) and reference cell-type fractions (`cell_type_fractions.csv`, used for platform calibration) from baseline single-cell RNA-seq data.
 
 ```bash
 deconv-attributor build-ref \
@@ -49,9 +49,9 @@ deconv-attributor build-ref \
 | `--sc-meta` | Yes (or `--gse141259-dir`) | `None` | Path to scRNA-seq cell metadata table (`.csv`, `.tsv`, `.txt`, or `.gz`, indexed by cell barcode). |
 | `--sample-filter` | Optional | `None` | Filters `--sc-meta` to rows where the `sample` column equals this value (e.g., `B1_1_0h`). Useful when a single metadata file contains multiple samples with overlapping barcode names (`bc0001`, etc.). |
 | `--cell-type-col` | Optional | `metacelltype` | Column name in `--sc-meta` containing cell-type labels (e.g., `maintype`, `celltype`, or `cell_type`). |
-| `--gse141259-dir` | Optional | `data/GSE141259` | Path to a 10x MatrixMarket `GSE141259` folder (used only if `--sc-counts` and `--sc-meta` are omitted; auto-downloads from GEO if missing). |
+| `--gse141259-dir` | Optional | `None` | Path to a 10x MatrixMarket `GSE141259` folder (used only if `--sc-counts` and `--sc-meta` are omitted; auto-downloads from GEO if missing). |
 | `--baseline-group` | Optional | `PBS` | Baseline condition name in the `grouping` column when using `--gse141259-dir`. |
-| `--out-dir` | Optional | `data/reference` | Output directory where `S_T_matrix_GxK.csv.gz` and `marker_weights.csv` will be saved. |
+| `--out-dir` | Optional | `data/reference` | Output directory where `S_T_matrix_GxK.csv.gz`, `marker_weights.csv` and `cell_type_fractions.csv` will be saved. |
 
 ---
 
@@ -80,6 +80,8 @@ deconv-attributor make-bulk \
 ### 3. `deconv-attributor solve`
 **Purpose:** Steps 2 & 3 — Estimates cell-type proportion shifts ($\Delta p$) between two bulk samples and attributes each gene's bulk expression change into cell-type shift (`delta_y_cell_type`, `pct_cell_type`) vs. intrinsic expression change (`delta_y_expr`, `pct_expr`).
 
+If the baseline bulk sample fits the reference poorly (Pearson $r < 0.90$ between $\log(1+y_1)$ and $\log(1+S^T p_1)$), per-gene capture efficiencies are calibrated from $y_1$ using the reference's `cell_type_fractions.csv`. The platform $r$ and whether calibration was applied are printed. References built before `cell_type_fractions.csv` existed still load, with a warning; re-run `build-ref` to get the same results as the in-memory path.
+
 ```bash
 deconv-attributor solve \
   --bulk path/to/bulk_0h_vs_4h.csv \
@@ -107,7 +109,15 @@ deconv-attributor solve \
 ---
 
 ### 4. `deconv-attributor benchmark`
-**Purpose:** Downloads the Strunz et al. (2020) Mouse Lung Bleomycin Fibrosis dataset (`GSE141259`) from NCBI GEO (if not already present) and runs the end-to-end benchmark (`PBS -> d10`).
+**Purpose:** Downloads the Strunz et al. (2020) Mouse Lung Bleomycin Fibrosis dataset (`GSE141259`) from NCBI GEO (if not already present) and runs a pseudobulk benchmark with known ground truth.
+
+Baseline cells are split in half: one half builds the reference, the other half and all target cells become pseudobulk samples $y = S_{\text{group}}\, p_{\text{group}}$. Because the group profiles and fractions are known, the true split is exact:
+
+$$\Delta y_{\mathrm{celltype}}^{\mathrm{true}} = S_{\mathrm{base}}\,\Delta p^{\mathrm{true}}, \qquad \Delta y_{\mathrm{expr}}^{\mathrm{true}} = (S_{\mathrm{target}} - S_{\mathrm{base}})\, p_{\mathrm{target}}$$
+
+The benchmark reports $\Delta p$ accuracy (Pearson $r$, MAE, $\sum \Delta p$, which should be 0) and per-gene accuracy (correlation of $\Delta y_{\mathrm{celltype}}$, dominant-source accuracy and `%CellType` error over genes with $|\Delta y| \ge 1$ CP10K, and global `%CellType` vs. truth).
+
+The pseudobulk is noise-free, on the same platform as the reference, and ignores cell-size effects, so treat these numbers as an upper bound on real-data performance.
 
 ```bash
 deconv-attributor benchmark --data-dir data/GSE141259
@@ -116,3 +126,6 @@ deconv-attributor benchmark --data-dir data/GSE141259
 | Option | Required? | Default | Description |
 | :--- | :---: | :--- | :--- |
 | `--data-dir` | Optional | `data/GSE141259` | Local directory where the `GSE141259` files are stored or downloaded. |
+| `--baseline-group` | Optional | `PBS` | Baseline group in the `grouping` column. |
+| `--target-group` | Optional | `d10` | Target group in the `grouping` column (e.g. `d3`, `d21`). |
+| `--seed` | Optional | `42` | Seed for the reference/held-out split of baseline cells. |
